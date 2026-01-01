@@ -13,15 +13,35 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    println!("Generating dependency files...");
+    eprintln!("Generating dependency files...");
     generate_depfiles()?;
 
-    println!("Parsing dependency files...");
+    eprintln!("Parsing dependency files...");
     let source_files = parse_depfiles()?;
 
-    println!("Found {} source files:", source_files.len());
+    eprintln!("Found {} source files", source_files.len());
+
+    // Output all source files with #line directives
     for file in &source_files {
-        println!("  - {}", file.display());
+        output_file(file)?;
+    }
+
+    Ok(())
+}
+
+fn output_file(path: &PathBuf) -> Result<(), String> {
+    let contents = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+
+    // Output #line directive
+    println!("#line 1 \"{}\"", path.display());
+
+    // Output file contents
+    print!("{}", contents);
+
+    // Ensure there's a newline at the end
+    if !contents.ends_with('\n') {
+        println!();
     }
 
     Ok(())

@@ -48,15 +48,15 @@ fn output_file(path: &PathBuf, strip: bool) -> Result<(), String> {
     if strip {
         // Parse and strip function bodies
         let stripped = strip_function_bodies(&contents)?;
-        print!("{}", stripped);
+        println!("{}", stripped);
     } else {
         // Output file contents as-is
         print!("{}", contents);
-    }
 
-    // Ensure there's a newline at the end
-    if !contents.ends_with('\n') {
-        println!();
+        // Ensure there's a newline at the end
+        if !contents.ends_with('\n') {
+            println!();
+        }
     }
 
     Ok(())
@@ -69,7 +69,8 @@ fn strip_function_bodies(source: &str) -> Result<String, String> {
     let mut stripper = BodyStripper;
     stripper.visit_file_mut(&mut ast);
 
-    Ok(quote::quote!(#ast).to_string())
+    // Use prettyplease to format the AST nicely
+    Ok(prettyplease::unparse(&ast))
 }
 
 struct BodyStripper;

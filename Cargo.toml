@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 syn = { version = "2.0", features = ["full", "visit-mut"] }
 prettyplease = "0.2"
+tiktoken-rs = "0.9"

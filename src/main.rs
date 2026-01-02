@@ -3,8 +3,9 @@ mod parser;
 use std::process::{Command, exit};
 use std::path::PathBuf;
 use std::fs;
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Write as _};
 use syn::visit_mut::{self, VisitMut};
+use tiktoken_rs::cl100k_base;
 
 fn main() {
     if let Err(e) = run() {
@@ -30,36 +31,68 @@ fn run() -> Result<(), String> {
 
     eprintln!("Found {} source files", source_files.len());
 
+    // Collect all output in a buffer so we can count tokens
+    let mut output_buffer = Vec::new();
+
     // Output all source files with #line directives
     for file in &source_files {
-        output_file(file, strip)?;
+        output_file_to_buffer(&mut output_buffer, file, strip)?;
+    }
+
+    // Convert to string for token counting
+    let output_str = String::from_utf8(output_buffer.clone())
+        .map_err(|e| format!("Invalid UTF-8 in output: {}", e))?;
+
+    // Count tokens
+    let token_count = count_tokens(&output_str)?;
+
+    // Print the actual output to stdout
+    std::io::stdout().write_all(&output_buffer)
+        .map_err(|e| format!("Failed to write output: {}", e))?;
+
+    // Print statistics to stderr
+    eprintln!("\n--- Token Statistics ---");
+    eprintln!("Total tokens: {}", token_count);
+    eprintln!("Character count: {}", output_str.len());
+    eprintln!("Tokens per character: {:.3}", token_count as f64 / output_str.len() as f64);
+
+    Ok(())
+}
+
+fn output_file_to_buffer(buffer: &mut Vec<u8>, path: &PathBuf, strip: bool) -> Result<(), String> {
+    let contents = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+
+    // Output #line directive
+    writeln!(buffer, "#line 1 \"{}\"", path.display())
+        .map_err(|e| format!("Failed to write: {}", e))?;
+
+    if strip {
+        // Parse and strip function bodies
+        let stripped = strip_function_bodies(&contents)?;
+        writeln!(buffer, "{}", stripped)
+            .map_err(|e| format!("Failed to write: {}", e))?;
+    } else {
+        // Output file contents as-is
+        write!(buffer, "{}", contents)
+            .map_err(|e| format!("Failed to write: {}", e))?;
+
+        // Ensure there's a newline at the end
+        if !contents.ends_with('\n') {
+            writeln!(buffer)
+                .map_err(|e| format!("Failed to write: {}", e))?;
+        }
     }
 
     Ok(())
 }
 
-fn output_file(path: &PathBuf, strip: bool) -> Result<(), String> {
-    let contents = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+fn count_tokens(text: &str) -> Result<usize, String> {
+    let bpe = cl100k_base()
+        .map_err(|e| format!("Failed to load tokenizer: {}", e))?;
 
-    // Output #line directive
-    println!("#line 1 \"{}\"", path.display());
-
-    if strip {
-        // Parse and strip function bodies
-        let stripped = strip_function_bodies(&contents)?;
-        println!("{}", stripped);
-    } else {
-        // Output file contents as-is
-        print!("{}", contents);
-
-        // Ensure there's a newline at the end
-        if !contents.ends_with('\n') {
-            println!();
-        }
-    }
-
-    Ok(())
+    let tokens = bpe.encode_with_special_tokens(text);
+    Ok(tokens.len())
 }
 
 fn strip_function_bodies(source: &str) -> Result<String, String> {

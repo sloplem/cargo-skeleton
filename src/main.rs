@@ -99,11 +99,45 @@ fn strip_function_bodies(source: &str) -> Result<String, String> {
     let mut ast = syn::parse_file(source)
         .map_err(|e| format!("Failed to parse Rust source: {}", e))?;
 
+    // Remove test modules and functions
+    ast.items.retain(|item| !is_test_item(item));
+
     let mut stripper = BodyStripper;
     stripper.visit_file_mut(&mut ast);
 
     // Use prettyplease to format the AST nicely
     Ok(prettyplease::unparse(&ast))
+}
+
+fn is_test_item(item: &syn::Item) -> bool {
+    let attrs = match item {
+        syn::Item::Fn(f) => &f.attrs,
+        syn::Item::Mod(m) => &m.attrs,
+        syn::Item::Impl(i) => &i.attrs,
+        syn::Item::Struct(s) => &s.attrs,
+        syn::Item::Enum(e) => &e.attrs,
+        syn::Item::Trait(t) => &t.attrs,
+        syn::Item::Const(c) => &c.attrs,
+        syn::Item::Static(s) => &s.attrs,
+        syn::Item::Type(t) => &t.attrs,
+        _ => return false,
+    };
+
+    attrs.iter().any(|attr| {
+        // Check for #[test] attribute
+        if attr.path().is_ident("test") {
+            return true;
+        }
+
+        // Check for #[cfg(test)]
+        if attr.path().is_ident("cfg") {
+            if let syn::Meta::List(ref meta_list) = attr.meta {
+                return meta_list.tokens.to_string().contains("test");
+            }
+        }
+
+        false
+    })
 }
 
 struct BodyStripper;
